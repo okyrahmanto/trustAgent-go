@@ -438,7 +438,7 @@ func testOsExec() {
 	  }*/
 
 	// construct `go version` command
-	cmd := exec.Command("/sbin/ip route|awk '/default/ { print $3 }'")
+	cmd := exec.Command("/bin/bash","-c","/sbin/ip route | awk '/default/ { print $3 }'")
 
 	// configure `Stdout` and `Stderr`
 	cmd.Stdout = os.Stdout
