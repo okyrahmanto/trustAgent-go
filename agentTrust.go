@@ -16,6 +16,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -97,6 +98,7 @@ func messageReceiverAgent(w http.ResponseWriter, r *http.Request) { //whoever se
 
 	//var dest concontentJson[]
 	fmt.Fprintf(w, "%+v", (response)) // response
+	//println(message)
 	//fmt.Fprintf(w, "%+v", (message.Destination)) // response
 	//fmt.Fprintf(w, "%+v", (message.Data))        // response
 	//fmt.Fprintf(w, "%+v", string(reqBody)) // response
@@ -143,13 +145,15 @@ func SendMessageToAgent(agentURL string, message MessageAgent) MessageAgent { //
 }
 
 func SendMessageToDevice(deviceURL string) { // send to openHAB
+
+	// curl -X PUT --header "Content-Type: text/plain" --header "Accept: application/json" -d "CLOSED" "http://{openHAB_IP}:8080/rest/items/My_Item/state"
 	postBody, _ := json.Marshal(map[string]string{
 		"name":  "Toby",
 		"email": "Toby@example.com",
 	})
 	responseBody := bytes.NewBuffer(postBody)
 	//Leverage Go's HTTP Post function to make request
-	resp, err := http.Post(deviceURL, "application/json", responseBody)
+	resp, err := http.Post("http://{openHAB_IP}:8080/rest/items/My_Item/state", "application/json", responseBody)
 	//Handle Error
 	if err != nil {
 		log.Fatalf("An Error Occured %v", err)
@@ -416,14 +420,46 @@ func testTransaction(contract *gateway.Contract) {
 	log.Println(string(result))
 }
 
+func testOsExec() {
+	// get `go` executable path /sbin/ip route|awk '/default/ { print $3 }'
+	/*goExecutable, _ := exec.LookPath( "go" )
+
+	  // construct `go version` command
+	  cmdGoVer := &exec.Cmd {
+	      Path: goExecutable,
+	      Args: []string{ goExecutable, "version" },
+	      Stdout: os.Stdout,
+	      Stderr: os.Stdout,
+	  }
+
+	  // run `go version` command
+	  if err := cmdGoVer.Run(); err != nil {
+	      fmt.Println( "Error:", err );
+	  }*/
+
+	// construct `go version` command
+	cmd := exec.Command("/sbin/ip route|awk '/default/ { print $3 }'")
+
+	// configure `Stdout` and `Stderr`
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stdout
+
+	// run command
+	if err := cmd.Run(); err != nil {
+		fmt.Println("Error:", err)
+	}
+
+}
+
 func main() {
 
+	testOsExec()
 	//contract := initApplication()
 
 	//testTransaction(&contract)
 
 	// run rest server
-	StartServer()
+	//StartServer()
 	//submitTransaction(contract)
 	/*
 
