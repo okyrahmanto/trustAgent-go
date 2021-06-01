@@ -33,6 +33,10 @@ var ccPath = os.DevNull
 var val = make(map[string]int)
 var weight = make(map[string]int)
 
+var ipOpenHAB = ""
+
+var mainContract gateway.Contract
+
 //global func
 func createTimestamp() string {
 	return strconv.FormatInt(time.Now().Unix(), 10)
@@ -144,8 +148,10 @@ func SendMessageToAgent(agentURL string, message MessageAgent) MessageAgent { //
 	return response
 }
 
-func SendMessageToDevice(deviceURL string) { // send to openHAB
-
+func SendMessageToDevice(device string) { // send to openHAB
+	if ipOpenHAB == "" {
+		ipOpenHAB = getHostOpenhab()
+	}
 	// curl -X PUT --header "Content-Type: text/plain" --header "Accept: application/json" -d "CLOSED" "http://{openHAB_IP}:8080/rest/items/My_Item/state"
 	postBody, _ := json.Marshal(map[string]string{
 		"name":  "Toby",
@@ -153,7 +159,7 @@ func SendMessageToDevice(deviceURL string) { // send to openHAB
 	})
 	responseBody := bytes.NewBuffer(postBody)
 	//Leverage Go's HTTP Post function to make request
-	resp, err := http.Post("http://{openHAB_IP}:8080/rest/items/My_Item/state", "application/json", responseBody)
+	resp, err := http.Post("http://"+ipOpenHAB+":8080/rest/items/"+device+"_command/state", "application/json", responseBody)
 	//Handle Error
 	if err != nil {
 		log.Fatalf("An Error Occured %v", err)
@@ -420,44 +426,20 @@ func testTransaction(contract *gateway.Contract) {
 	log.Println(string(result))
 }
 
-func testOsExec() {
-	// get `go` executable path /sbin/ip route|awk '/default/ { print $3 }'
-	/*goExecutable, _ := exec.LookPath( "go" )
-
-	  // construct `go version` command
-	  cmdGoVer := &exec.Cmd {
-	      Path: goExecutable,
-	      Args: []string{ goExecutable, "version" },
-	      Stdout: os.Stdout,
-	      Stderr: os.Stdout,
-	  }
-
-	  // run `go version` command
-	  if err := cmdGoVer.Run(); err != nil {
-	      fmt.Println( "Error:", err );
-	  }*/
-
-	// construct `go version` command
-	cmd := exec.Command("/bin/bash","-c","/sbin/ip route | awk '/default/ { print $3 }'")
-
-	// configure `Stdout` and `Stderr`
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stdout
-
-	// run command
-	if err := cmd.Run(); err != nil {
-		fmt.Println("Error:", err)
+func getHostOpenhab() string {
+	output, err := exec.Command("/bin/bash", "-c", "/sbin/ip route | awk '/default/ { print $3 }'").Output()
+	if err != nil {
+		log.Fatal(err)
 	}
-
+	return string(output)
 }
 
 func main() {
 
-	testOsExec()
-	//contract := initApplication()
+	mainContract = initApplication()
 
 	//testTransaction(&contract)
-
+	SendMessageToDevice("device1")
 	// run rest server
 	//StartServer()
 	//submitTransaction(contract)
