@@ -16,7 +16,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -427,11 +426,11 @@ func testTransaction(contract *gateway.Contract) {
 }
 
 func getHostOpenhab() string {
-	output, err := exec.Command("/bin/bash", "-c", "/sbin/ip route | awk '/default/ { print $3 }'").Output()
-	if err != nil {
-		log.Fatal(err)
-	}
-	return string(output)
+	//output, err := exec.Command("/bin/bash", "-c", "/sbin/ip route | awk '/default/ { print $3 }'").Output()
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	return "openhab"
 }
 
 func main() {
@@ -441,7 +440,7 @@ func main() {
 	//testTransaction(&contract)
 	SendMessageToDevice("device1")
 	// run rest server
-	//StartServer()
+	StartServer()
 	//submitTransaction(contract)
 	/*
 
