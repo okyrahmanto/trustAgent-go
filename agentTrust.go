@@ -438,7 +438,7 @@ func main() {
 	mainContract = initApplication()
 
 	//testTransaction(&contract)
-	SendMessageToDevice("device1")
+	//SendMessageToDevice("device1")
 	// run rest server
 	StartServer()
 	//submitTransaction(contract)
