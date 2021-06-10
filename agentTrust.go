@@ -435,7 +435,7 @@ func getHostOpenhab() string {
 
 func main() {
 
-	mainContract = initApplication()
+	//mainContract = initApplication()
 
 	//testTransaction(&contract)
 	//SendMessageToDevice("device1")
