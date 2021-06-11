@@ -3,6 +3,7 @@ ENV APP_HOME /go/src/github.com/okyrahmanto/chainapplication-go
 WORKDIR $APP_HOME
 ENV GO111MODULE=on
 COPY ./build/agent-things /go/src/github.com/okyrahmanto/chainapplication-go
+COPY ./config-fabric /go/src/github.com/okyrahmanto/chainapplication-go
 ENV GOFLAGS=-mod=vendor
 ENV APP_USER app
 ARG GROUP_ID

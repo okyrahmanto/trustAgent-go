@@ -252,10 +252,7 @@ func initApplication() gateway.Contract {
 	)*/
 
 	ccpPath := filepath.Join(
-		//		"..",
-		//		"..",
-		"/Users/oky/Docker/fabric/fa2/new2/fabric-samples",
-		"4host-swarm",
+		"./config-fabric",
 		"crypto-config",
 		"peerOrganizations",
 		"org1.example.com",
@@ -297,10 +294,7 @@ func populateWalletContent(wallet *gateway.Wallet) error {
 	)*/
 
 	credPath := filepath.Join(
-		//		"..",
-		//		"..",
-		"/Users/oky/Docker/fabric/fa2/new2/fabric-samples",
-		"4host-swarm",
+		"./config-fabric",
 		"crypto-config",
 		"peerOrganizations",
 		"org1.example.com",
