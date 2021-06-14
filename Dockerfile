@@ -1,4 +1,4 @@
-FROM golang:1.16.4-buster
+FROM debian:buster-slim
 ENV APP_HOME /go/src/github.com/okyrahmanto/chainapplication-go
 WORKDIR $APP_HOME
 ENV GO111MODULE=on
