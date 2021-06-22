@@ -59,9 +59,11 @@ type Message struct {
 }
 
 type MessageAgent struct {
+	UID         string `json:"UID"`
 	MessageType string `json:"MessageType"`
 	Destination string `json:"Destination"`
-	Data        string `json:"Data"`
+	Source      string `json:"Source"`
+	Content     string `json:"Content"`
 }
 
 /*
@@ -90,17 +92,24 @@ func homePage(w http.ResponseWriter, r *http.Request) {
 func messageReceiverAgent(w http.ResponseWriter, r *http.Request) { //whoever sent means data must be  fowrded to agent
 	// get the body of our POST request
 	// return the string response containing the request body
-	//messages went this meat tobe send to agent
+	//messages came from agent
 
 	reqBody, _ := ioutil.ReadAll(r.Body)
 	//var contentJson map[string]interface{}
 	var message MessageAgent
 	json.Unmarshal([]byte(reqBody), &message)
+
 	agentUrl := getAgentUrl(message.Destination)
-	response := SendMessageToAgent(agentUrl, message)
+	//response := SendMessageToAgent(agentUrl, message)
+
+	// print message content
+	fmt.Fprintf(w, "%+v", (agentUrl)) // response
+	fmt.Fprintf(w, "%+v", ("<br>"))   // response
+	fmt.Fprintf(w, "%+v", (message))  // response
+	//fmt.Fprintf(w, "%+v", (message.Data))        // response
 
 	//var dest concontentJson[]
-	fmt.Fprintf(w, "%+v", (response)) // response
+	//fmt.Fprintf(w, "%+v", (response)) // response
 	//println(message)
 	//fmt.Fprintf(w, "%+v", (message.Destination)) // response
 	//fmt.Fprintf(w, "%+v", (message.Data))        // response
@@ -110,7 +119,7 @@ func messageReceiverAgent(w http.ResponseWriter, r *http.Request) { //whoever se
 
 // get agent destination url
 func getAgentUrl(device string) string {
-	return "http://localhost:10001/" + device + "-agent"
+	return "http://" + device + "-agent:10001/"
 }
 
 func messageReceiverDevice(w http.ResponseWriter, r *http.Request) { //whoever sent means data must be  fowrded to device
@@ -238,7 +247,7 @@ func initApplication() gateway.Contract {
 
 	log.Println("============ application-golang starts ============")
 
-	err = os.Setenv("DISCOVERY_AS_LOCALHOST", "false")
+	err = os.Setenv("DISCOVERY_AS_LOCALHOST", "true")
 	if err != nil {
 		log.Fatalf("Error setting DISCOVERY_AS_LOCALHOST environemnt variable: %v", err)
 	}
@@ -288,7 +297,7 @@ func initApplication() gateway.Contract {
 		log.Fatalf("Failed to get network: %v", err)
 	}
 
-	contract := network.GetContract("fabcar")
+	contract := network.GetContract("trusted-chaincode")
 
 	return *contract
 }
