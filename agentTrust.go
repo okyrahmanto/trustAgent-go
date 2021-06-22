@@ -110,7 +110,7 @@ func messageReceiverAgent(w http.ResponseWriter, r *http.Request) { //whoever se
 
 // get agent destination url
 func getAgentUrl(device string) string {
-	return "http://localhost:10001/device"
+	return "http://localhost:10001/" + device + "-agent"
 }
 
 func messageReceiverDevice(w http.ResponseWriter, r *http.Request) { //whoever sent means data must be  fowrded to device
@@ -172,6 +172,17 @@ func SendMessageToDevice(device string) { // send to openHAB
 	sb := string(body)
 	log.Printf(sb)
 }
+func testCallDataFabric(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Welcome to agent")
+	fmt.Println("Endpoint Hit: out")
+	getAllAgent(&mainContract)
+}
+
+func testInputDataToFabric(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Welcome to agent")
+	fmt.Println("Endpoint Hit: testin")
+	putAgent(&mainContract)
+}
 
 func handleRequests() {
 	myRouter := mux.NewRouter().StrictSlash(true)
@@ -179,8 +190,12 @@ func handleRequests() {
 	//myRouter.HandleFunc("/articles", returnAllArticles)
 	// NOTE: Ordering is important here! This has to be defined before
 	// the other `/article` endpoint.
+
 	myRouter.HandleFunc("/agent", messageReceiverAgent).Methods("POST")
 	myRouter.HandleFunc("/device", messageReceiverDevice).Methods("POST")
+	myRouter.HandleFunc("/testin", testInputDataToFabric).Methods("POST")
+	myRouter.HandleFunc("/testout", testCallDataFabric).Methods("POST")
+
 	//myRouter.HandleFunc("/article/{id}", returnSingleArticle)
 	log.Fatal(http.ListenAndServe(":10000", myRouter))
 }
@@ -223,7 +238,7 @@ func initApplication() gateway.Contract {
 
 	log.Println("============ application-golang starts ============")
 
-	err = os.Setenv("DISCOVERY_AS_LOCALHOST", "true")
+	err = os.Setenv("DISCOVERY_AS_LOCALHOST", "false")
 	if err != nil {
 		log.Fatalf("Error setting DISCOVERY_AS_LOCALHOST environemnt variable: %v", err)
 	}
@@ -379,6 +394,24 @@ func wRating(val map[string]int, weight map[string]int) float32 {
 		sumW += value
 	}
 	return float32(sumWR) / float32(sumW)
+}
+
+func getAllAgent(contract *gateway.Contract) {
+	log.Println("--> Evaluate Transaction: GetAllAgent, function returns all the current assets on the ledger")
+	result, err := contract.EvaluateTransaction("GetAllAgent")
+	if err != nil {
+		log.Fatalf("Failed to evaluate transaction: %v", err)
+	}
+	log.Println(string(result))
+}
+
+func putAgent(contract *gateway.Contract) {
+	log.Println("--> Submit Transaction: CreateAgent, creates new agent ")
+	result, err := contract.SubmitTransaction("CreateAgent", createAgentID("device1"), "device1", "device1/listen", "0", "50")
+	if err != nil {
+		log.Fatalf("Failed to Submit transaction: %v", err)
+	}
+	log.Println(string(result))
 }
 
 func testTransaction(contract *gateway.Contract) {
