@@ -207,9 +207,10 @@ func SendMessageToDevice(device string, message MessageAgent) { // send to openH
 	postBody, _ := json.Marshal(message)
 	responseBody := bytes.NewBuffer(postBody)
 	//Leverage Go's HTTP Post function to make request
+	//curl -X POST --header "Content-Type: text/plain" --header "Accept: application/json" -d "OFF" "http://{openHAB_IP}:8080/rest/items/My_Item"
 	url := "http://" + ipOpenHAB + ":8080/rest/items/" + message.Destination + "_command/state"
 	println(url)
-	resp, err := http.Post(url, "application/json", responseBody)
+	resp, err := http.Post(url, "text/plain", responseBody)
 	//Handle Error
 	if err != nil {
 		log.Fatalf("An Error Occured %v", err)
