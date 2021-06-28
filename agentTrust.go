@@ -196,11 +196,14 @@ func SendMessageToDevice(device string, message MessageAgent) { // send to openH
 	if ipOpenHAB == "" {
 		ipOpenHAB = getHostOpenhab()
 	}
+	println(ipOpenHAB)
 	// curl -X PUT --header "Content-Type: text/plain" --header "Accept: application/json" -d "CLOSED" "http://{openHAB_IP}:8080/rest/items/My_Item/state"
-	postBody, _ := json.Marshal(map[string]string{
-		"name":  "Toby",
-		"email": "Toby@example.com",
-	})
+	//postBody, _ := json.Marshal(map[string]string{
+	//	"name":  "Toby",
+	//	"email": "Toby@example.com",
+	//})
+
+	postBody, _ := json.Marshal(message)
 	responseBody := bytes.NewBuffer(postBody)
 	//Leverage Go's HTTP Post function to make request
 	resp, err := http.Post("http://"+ipOpenHAB+":8080/rest/items/"+device+"_command/state", "application/json", responseBody)
