@@ -195,6 +195,7 @@ func SendMessageToAgent(agentURL string, message MessageAgent) MessageAgent { //
 func SendMessageToDevice(device string, message MessageAgent) { // send to openHAB
 	if ipOpenHAB == "" {
 		ipOpenHAB = getHostOpenhab()
+		ipOpenHAB = "192.168.56.109"
 	}
 	println(ipOpenHAB)
 	// curl -X PUT --header "Content-Type: text/plain" --header "Accept: application/json" -d "CLOSED" "http://{openHAB_IP}:8080/rest/items/My_Item/state"
@@ -206,7 +207,9 @@ func SendMessageToDevice(device string, message MessageAgent) { // send to openH
 	postBody, _ := json.Marshal(message)
 	responseBody := bytes.NewBuffer(postBody)
 	//Leverage Go's HTTP Post function to make request
-	resp, err := http.Post("http://"+ipOpenHAB+":8080/rest/items/"+message.Destination+"_command/state", "application/json", responseBody)
+	url := "http://" + ipOpenHAB + ":8080/rest/items/" + message.Destination + "_command/state"
+	println(url)
+	resp, err := http.Post(url, "application/json", responseBody)
 	//Handle Error
 	if err != nil {
 		log.Fatalf("An Error Occured %v", err)
