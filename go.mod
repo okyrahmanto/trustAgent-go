@@ -1,4 +1,4 @@
-module asset-transfer-basic
+module trustAgent-go
 
 go 1.14
 

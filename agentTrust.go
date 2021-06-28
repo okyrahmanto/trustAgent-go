@@ -8,6 +8,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -19,6 +20,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	db "trustAgent-go/blockchain"
 
 	"github.com/gorilla/mux"
 
@@ -33,6 +36,10 @@ var val = make(map[string]int)
 var weight = make(map[string]int)
 
 var ipOpenHAB = ""
+
+var topicID = ""
+
+var inboxMessage MessageAgent
 
 var mainContract gateway.Contract
 
@@ -66,6 +73,11 @@ type MessageAgent struct {
 	Content     string `json:"Content"`
 }
 
+type AgentIdentity struct {
+	AgentID   string `json:"UID"`
+	AgentName string `json:"UID"`
+}
+
 /*
 example data format for message Agent
 {
@@ -83,6 +95,7 @@ type MessageData struct {
 }
 
 var messages []Message
+var agentIDentity AgentIdentity
 
 func homePage(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Welcome to agent")
@@ -94,14 +107,26 @@ func messageReceiverAgent(w http.ResponseWriter, r *http.Request) { //whoever se
 	// return the string response containing the request body
 	//messages came from agent
 
+	// get message
 	reqBody, _ := ioutil.ReadAll(r.Body)
 	//var contentJson map[string]interface{}
 	var message MessageAgent
 	json.Unmarshal([]byte(reqBody), &message)
-
 	agentUrl := getAgentUrl(message.Destination)
-	//response := SendMessageToAgent(agentUrl, message)
 
+	// send to device
+	SendMessageToDevice(agentUrl, message)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for {
+		if inboxMessage.UID == "hei1" || ctx.Err() != nil {
+			break
+		}
+	}
+
+	//response := SendMessageToAgent(agentUrl, message)
+	fmt.Println(message)
 	// print message content
 	fmt.Fprintf(w, "%+v", (agentUrl)) // response
 	fmt.Fprintf(w, "%+v", ("<br>"))   // response
@@ -110,11 +135,22 @@ func messageReceiverAgent(w http.ResponseWriter, r *http.Request) { //whoever se
 
 	//var dest concontentJson[]
 	//fmt.Fprintf(w, "%+v", (response)) // response
-	//println(message)
+
 	//fmt.Fprintf(w, "%+v", (message.Destination)) // response
 	//fmt.Fprintf(w, "%+v", (message.Data))        // response
 	//fmt.Fprintf(w, "%+v", string(reqBody)) // response
 	//json.NewEncoder(w).Encode(messages)
+
+}
+
+func changeTopic(w http.ResponseWriter, r *http.Request) { //whoever sent means data must be  fowrded to agent
+	// get the body of our POST request
+	// return the string response containing the request body
+	//messages came from agent
+
+	topicID = "hei1"
+	fmt.Fprintf(w, "%+v", ("changed to hei1")) // response
+
 }
 
 // get agent destination url
@@ -156,7 +192,7 @@ func SendMessageToAgent(agentURL string, message MessageAgent) MessageAgent { //
 	return response
 }
 
-func SendMessageToDevice(device string) { // send to openHAB
+func SendMessageToDevice(device string, message MessageAgent) { // send to openHAB
 	if ipOpenHAB == "" {
 		ipOpenHAB = getHostOpenhab()
 	}
@@ -201,6 +237,7 @@ func handleRequests() {
 	// the other `/article` endpoint.
 
 	myRouter.HandleFunc("/agent", messageReceiverAgent).Methods("POST")
+	myRouter.HandleFunc("/changetopic", changeTopic).Methods("POST")
 	myRouter.HandleFunc("/device", messageReceiverDevice).Methods("POST")
 	myRouter.HandleFunc("/testin", testInputDataToFabric).Methods("POST")
 	myRouter.HandleFunc("/testout", testCallDataFabric).Methods("POST")
@@ -470,8 +507,12 @@ func getHostOpenhab() string {
 }
 
 func main() {
+	// get env
+	var agentIDentity AgentIdentity
+	agentIDentity.AgentID = os.Getenv("agentID")
+	agentIDentity.AgentName = os.Getenv("agentName")
 
-	mainContract = initApplication()
+	mainContract = db.InitApplication()
 
 	//testTransaction(&contract)
 	//SendMessageToDevice("device1")
