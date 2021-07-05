@@ -17,11 +17,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"syscall"
 	"time"
 
-	db "trustAgent-go/blockchain"
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 
 	"github.com/gorilla/mux"
 
@@ -43,6 +46,10 @@ var inboxMessage MessageAgent
 
 var mainContract gateway.Contract
 
+var ListConnectedDevice map[string]string
+
+var clientMQTT mqtt.Client
+
 //global func
 func createTimestamp() string {
 	return strconv.FormatInt(time.Now().Unix(), 10)
@@ -56,8 +63,13 @@ func createUID() string {
 	return sha1_hash[len(sha1_hash)-8:]
 }
 
+type commandMQTT struct {
+	Command string `json:"Command"`
+	Content string `json:"Content"`
+}
+
 // function for rest
-type Message struct {
+type MessageAgent struct {
 	MessageID   string `json:"MessageID"`
 	Source      string `json:"Source"`
 	Destination string `json:"Destination"`
@@ -65,11 +77,13 @@ type Message struct {
 	Data        string `json:"Data"`
 }
 
-type MessageAgent struct {
+type Message struct {
 	UID         string `json:"UID"`
+	Topic       string `json:"Topic"`
 	MessageType string `json:"MessageType"`
 	Destination string `json:"Destination"`
 	Source      string `json:"Source"`
+	Sender      string `json:"Sender"`
 	Content     string `json:"Content"`
 }
 
@@ -115,12 +129,12 @@ func messageReceiverAgent(w http.ResponseWriter, r *http.Request) { //whoever se
 	agentUrl := getAgentUrl(message.Destination)
 
 	// send to device
-	SendMessageToDevice(agentUrl, message)
+	//SendMessageToDevice(agentUrl, message)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	for {
-		if inboxMessage.UID == "hei1" || ctx.Err() != nil {
+		if inboxMessage.MessageID == "hei1" || ctx.Err() != nil {
 			break
 		}
 	}
@@ -192,38 +206,51 @@ func SendMessageToAgent(agentURL string, message MessageAgent) MessageAgent { //
 	return response
 }
 
-func SendMessageToDevice(device string, message MessageAgent) { // send to openHAB
+func SendMessageToDevice(device string, message Message) { // send to openHAB
 	if ipOpenHAB == "" {
 		ipOpenHAB = getHostOpenhab()
-		ipOpenHAB = "192.168.56.109"
+		//	ipOpenHAB = "192.168.56.109"
 	}
+
+	//ipOpenHAB = "192.168.56.109"
 	println(ipOpenHAB)
 	// curl -X PUT --header "Content-Type: text/plain" --header "Accept: application/json" -d "CLOSED" "http://{openHAB_IP}:8080/rest/items/My_Item/state"
-	//postBody, _ := json.Marshal(map[string]string{
-	//	"name":  "Toby",
-	//	"email": "Toby@example.com",
-	//})
-
 	postBody, _ := json.Marshal(message)
 	responseBody := bytes.NewBuffer(postBody)
-	//Leverage Go's HTTP Post function to make request
-	//curl -X POST --header "Content-Type: text/plain" --header "Accept: application/json" -d "OFF" "http://{openHAB_IP}:8080/rest/items/My_Item"
-	url := "http://" + ipOpenHAB + ":8080/rest/items/" + message.Destination + "_command/state"
-	println(url)
-	resp, err := http.Post(url, "text/plain", responseBody)
-	//Handle Error
-	if err != nil {
-		log.Fatalf("An Error Occured %v", err)
+
+	timeout := time.Duration(5 * time.Second)
+	client := http.Client{
+		Timeout: timeout,
 	}
+
+	header := map[string][]string{
+		"Content-Type": {"text/plain"},
+		"Accept":       {"application/json"},
+	}
+	//curl -X POST --header "Content-Type: text/plain" --header "Accept: application/json" -d "OFF" "http://{openHAB_IP}:8080/rest/items/My_Item"
+	url := "http://" + ipOpenHAB + ":8080/rest/items/" + "device2" + "_command"
+	println(url)
+	req, err := http.NewRequest("POST", url, responseBody)
+	req.Header = header
+
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
 	defer resp.Body.Close()
-	//Read the response body
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	sb := string(body)
-	log.Printf(sb)
+	log.Println(body)
+
 }
+
 func testCallDataFabric(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Welcome to agent")
 	fmt.Println("Endpoint Hit: out")
@@ -257,11 +284,12 @@ func StartServer() {
 	fmt.Println("Rest API v2.0 - Mux Routers")
 	m := MessageData{createUID(), "Hello"}
 	messageData, _ := json.Marshal(m)
+	println(messageData)
 	//test message output
-	messages = []Message{
+	/*messages = []Message{
 		{MessageID: createUID(), Source: "agent1", Destination: "agent2", Timestamp: createTimestamp(), Data: string(messageData)},
 		{MessageID: createUID(), Source: "agent1", Destination: "agent3", Timestamp: createTimestamp(), Data: string(messageData)},
-	}
+	}*/
 	handleRequests()
 }
 
@@ -510,7 +538,136 @@ func getHostOpenhab() string {
 	//if err != nil {
 	//	log.Fatal(err)
 	//}
-	return "openhab"
+	return "127.0.0.1"
+}
+
+var logHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
+	//...
+	log.Printf("Topic %s logged...\n", msg.Topic())
+}
+
+var registrationHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
+	//...
+	log.Printf("Topic %s registered...\n", msg.Payload())
+}
+
+var agentSubscribeHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
+	//...
+	//log.Printf("Topic %s registered...\n", msg.Topic())
+	log.Printf("message received in topic %s ...\n", msg.Topic())
+
+	//check topic for get deviceID
+	deviceID := strings.Split(strings.Split(msg.Topic(), "-")[2], "/")[0]
+	// get payload
+	var rawPayload = string(msg.Payload())
+	var message Message
+
+	err := json.Unmarshal([]byte(rawPayload), &message)
+	log.Printf("message received in topic %s ...\n", message)
+	if err == nil {
+		switch message.Sender {
+		case "things":
+			// send to agent
+			// modifiy message
+			println("sending to from things to agent")
+			message.Sender = "agent"
+			message.UID = createUID()
+			messageForAgent, err := json.Marshal(message)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			agentPublishHandler("agent-device-"+message.Destination+"/listen", string(messageForAgent))
+		case "agent":
+			// send to things (openhab)
+			// modified messge
+			println("sending to from agent to things")
+			message.Sender = "things"
+			message.UID = createUID()
+			SendMessageToDevice(message.Destination, message)
+		}
+	} else {
+		println(err)
+	}
+
+	println(deviceID)
+
+}
+
+func agentPublishHandler(topic string, content string) {
+	clientMQTT.Publish(topic, 0, false, content)
+}
+
+var agentControllerHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
+	//...
+	log.Printf("Topic %s logged...\n", msg.Topic())
+	var rawPayload = string(msg.Payload())
+	var cmd commandMQTT
+
+	err := json.Unmarshal([]byte(rawPayload), &cmd)
+
+	if err == nil {
+		switch cmd.Command {
+		case "device-add":
+			addListConnectedDevice(cmd.Content)
+			println("called add")
+		case "device-remove":
+			removeListConnectedDevice(cmd.Content)
+			println("called remove")
+		}
+	}
+	println(cmd.Command)
+	//println(err)
+	//showListConnectedDevice()
+
+}
+
+func showListConnectedDevice() {
+	println(ListConnectedDevice)
+	for k, v := range ListConnectedDevice {
+		println("ID : " + k)
+		println("Value : " + v)
+	}
+}
+
+func addListConnectedDevice(deviceID string) {
+	ListConnectedDevice[deviceID] = deviceID
+	clientMQTT.Subscribe("agent-device-"+deviceID+"/listen", 0, agentSubscribeHandler)
+	showListConnectedDevice()
+}
+
+func removeListConnectedDevice(deviceID string) {
+	delete(ListConnectedDevice, deviceID)
+	clientMQTT.Unsubscribe("agent-device-" + deviceID + "/listen")
+	showListConnectedDevice()
+}
+
+func initializeMQTT() mqtt.Client {
+	var opts = mqtt.NewClientOptions()
+	opts.AddBroker(ipOpenHAB + ":1883")
+	opts.SetClientID("go-controller")
+
+	opts.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
+		log.Printf("topic: %s\n", msg.Topic())
+	})
+
+	client := mqtt.NewClient(opts)
+	if token := client.Connect(); token.Wait() && token.Error() != nil {
+		log.Panicln(token.Error())
+	}
+
+	return client
+}
+
+func startMQTTClient() {
+	keepAlive := make(chan os.Signal)
+	signal.Notify(keepAlive, os.Interrupt, syscall.SIGTERM)
+	clientMQTT = initializeMQTT()
+
+	// subscribe to controller topic
+	clientMQTT.Subscribe("agent-controller/command", 0, agentControllerHandler)
+
+	<-keepAlive
 }
 
 func main() {
@@ -518,14 +675,16 @@ func main() {
 	var agentIDentity AgentIdentity
 	agentIDentity.AgentID = os.Getenv("agentID")
 	agentIDentity.AgentName = os.Getenv("agentName")
-
-	mainContract = db.InitApplication()
-
+	ListConnectedDevice = make(map[string]string)
+	//mainContract = db.InitApplication()
+	ipOpenHAB = os.Args[2]
 	//testTransaction(&contract)
 	//SendMessageToDevice("device1")
 	// run rest server
-	StartServer()
+	//StartServer()
 	//submitTransaction(contract)
+	// using mqtt
+	startMQTTClient()
 	/*
 
 		log.Println("--> Evaluate Transaction: GetAllAgent, function returns all the current assets on the ledger")

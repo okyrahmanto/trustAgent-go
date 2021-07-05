@@ -1,0 +1,29 @@
+Things to "state" topic
+{ "subject":"getTemp"
+    "from":"device1"}
+
+OH listen to "state" topic convert message
+{ "topic":"getTemp"
+    "source":"device1"}
+
+{
+	"UID":"random"
+	"Topic":"subject"
+	"MessageType":"nil"
+	"Destination":"device1" 
+	"Source":"things1"
+    "Sender":"things"
+	"Content":"getTemp"
+}
+
+agent-controller/command
+{
+"command":"device-add",
+"content":"device2"
+}
+=========================
+agent-device-device1/listen
+{
+"topic":"getSound",
+"source":"device2"
+}
