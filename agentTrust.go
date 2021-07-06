@@ -24,6 +24,8 @@ import (
 	"syscall"
 	"time"
 
+	db "trustAgent-go/blockchain"
+
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
 	"github.com/gorilla/mux"
@@ -110,6 +112,11 @@ type MessageData struct {
 
 var messages []Message
 var agentIDentity AgentIdentity
+
+func timeTrack(start time.Time, name string) {
+	elapsed := time.Since(start)
+	log.Printf("%s took %s", name, elapsed)
+}
 
 func homePage(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Welcome to agent")
@@ -448,6 +455,29 @@ func addTransaction(contract gateway.Contract, agentID string) {
 
 }
 
+func getHistoryTransaction(contract *gateway.Contract, deviceID string) map[string]string {
+	getAllAgent(contract)
+	m := make(map[string]string)
+	return m
+}
+
+func calculateTrust(history map[string]string) float32 {
+	time.Sleep(2)
+	return 5
+}
+
+func decideTrust(trustValue float32) bool {
+	if trustValue > 4 {
+		return true
+	}
+	return false
+}
+
+func writeTransaction(contract *gateway.Contract) {
+	putAgent(contract)
+	time.Sleep(1)
+}
+
 func addAgent(contract gateway.Contract) {
 
 }
@@ -488,7 +518,7 @@ func getAllAgent(contract *gateway.Contract) {
 
 func putAgent(contract *gateway.Contract) {
 	log.Println("--> Submit Transaction: CreateAgent, creates new agent ")
-	result, err := contract.SubmitTransaction("CreateAgent", createAgentID("device1"), "device1", "device1/listen", "0", "50")
+	result, err := contract.SubmitTransaction("CreateAgent", createAgentID(createUID()), "device1", "device1/listen", "0", "50")
 	if err != nil {
 		log.Fatalf("Failed to Submit transaction: %v", err)
 	}
@@ -568,20 +598,33 @@ var agentSubscribeHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqt
 		switch message.Sender {
 		case "things":
 			// send to agent
-			// modifiy message
-			println("sending to from things to agent")
-			message.Sender = "agent"
-			message.UID = createUID()
-			messageForAgent, err := json.Marshal(message)
-			if err != nil {
-				fmt.Println(err)
-				return
+
+			// get history trustee
+			history := getHistoryTransaction(&mainContract, message.Destination)
+			// calculate trust
+			trustValue := calculateTrust(history)
+			// decide trust
+			if decideTrust(trustValue) {
+				// write transaction
+				writeTransaction(&mainContract)
+				// modify message
+				println("sending to from things to agent")
+				message.Sender = "agent"
+				message.UID = createUID()
+				messageForAgent, err := json.Marshal(message)
+				if err != nil {
+					fmt.Println(err)
+					return
+				}
+				agentPublishHandler("agent-device-"+message.Destination+"/listen", string(messageForAgent))
+			} else {
+				log.Println("target cannot be trusted")
 			}
-			agentPublishHandler("agent-device-"+message.Destination+"/listen", string(messageForAgent))
+
 		case "agent":
 			// send to things (openhab)
 			// modified messge
-			println("sending to from agent to things")
+			println("sending to from representative agent to things")
 			message.Sender = "things"
 			message.UID = createUID()
 			SendMessageToDevice(message.Destination, message)
@@ -676,7 +719,7 @@ func main() {
 	agentIDentity.AgentID = os.Getenv("agentID")
 	agentIDentity.AgentName = os.Getenv("agentName")
 	ListConnectedDevice = make(map[string]string)
-	//mainContract = db.InitApplication()
+	mainContract = db.InitApplication()
 	ipOpenHAB = os.Args[2]
 	//testTransaction(&contract)
 	//SendMessageToDevice("device1")
