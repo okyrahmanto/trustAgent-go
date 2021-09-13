@@ -6,10 +6,21 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/hyperledger/fabric-sdk-go/pkg/core/config"
 	"github.com/hyperledger/fabric-sdk-go/pkg/gateway"
 )
+
+type Agent struct {
+	AgentID      string `json:"AgentID"`
+	DeviceID     string `json:"DeviceID"`
+	SubcribePath string `json:"SubcribePath"`
+	TrustValue   string `json:"TrustValue"`
+	Tolerance    string `json:"Tolerance"`
+}
 
 func InitApplication() gateway.Contract {
 	// init val and weight
@@ -127,4 +138,59 @@ func populateWalletContent(wallet *gateway.Wallet) error {
 	identity := gateway.NewX509Identity("Org1MSP", string(cert), string(key))
 
 	return wallet.Put("appUser", identity)
+}
+
+func CreateAgent(contract gateway.Contract, DeviceID string, TrustValue string, Tolerance string) string {
+	log.Println("--> Submit Transaction: CreateAgent, creates new asset with ID, color, owner, size, and appraisedValue arguments")
+	AgentID := uuid.New()
+	SubcribePath := "agent-device-" + DeviceID + "/listen"
+	result, err := contract.SubmitTransaction("CreateAgent", AgentID.String(), DeviceID, SubcribePath, TrustValue, Tolerance)
+	if err != nil {
+		log.Fatalf("Failed to Submit transaction: %v", err)
+	}
+	log.Println(string(result))
+	return AgentID.String()
+}
+
+func IsAgentExist(contract gateway.Contract, DeviceID string) bool {
+	log.Println("--> Evaluate Transaction: Check Agent")
+	result, err := contract.EvaluateTransaction("GetAgentByDevice", DeviceID)
+	if err != nil {
+		log.Fatalf("Failed to Submit transaction: %v", err)
+	}
+	log.Println(string(result))
+	return string(result) != "[]"
+}
+
+func GetAgentByDevice(contract gateway.Contract, DeviceID string) []byte {
+	log.Println("--> Evaluate Transaction: Check Agent")
+	result, err := contract.EvaluateTransaction("GetAgentByDevice", DeviceID)
+	if err != nil {
+		log.Fatalf("Failed to Submit transaction: %v", err)
+	}
+	println(string(result))
+	return result
+}
+
+func GetHistoryEvaluation(contract *gateway.Contract, agentID string) []byte {
+	log.Println("--> Evaluate Transaction: Check Agent")
+	result, err := contract.EvaluateTransaction("GetEvaluationByAgent", agentID)
+	if err != nil {
+		log.Fatalf("Failed to Submit transaction: %v", err)
+	}
+	println(string(result))
+	return result
+}
+
+func CreateHistoryEvaluation(contract gateway.Contract, TransactionID string, AgentID string, AgentOwn string, AgentDestination string, ResponseTime string, Validity string, Correctness string, Cooperation string, Qos string, Availability string, Confidence string) string {
+	log.Println("--> Submit Transaction: CreateEvaluation, ")
+	EvaluationID := uuid.New().String()
+	Timestamp := strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
+
+	result, err := contract.SubmitTransaction("CreateEvaluationAgent", EvaluationID, TransactionID, AgentID, Timestamp, AgentOwn, AgentDestination, ResponseTime, Validity, Correctness, Cooperation, Qos, Availability, Confidence)
+	if err != nil {
+		log.Fatalf("Failed to Submit transaction: %v", err)
+	}
+	log.Println(string(result))
+	return string(result)
 }
