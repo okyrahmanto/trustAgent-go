@@ -13,4 +13,4 @@ RUN useradd -o -m -l --uid $USER_ID --gid $GROUP_ID $APP_USER
 RUN chown -R $APP_USER:$GROUP_ID $APP_HOME
 USER $APP_USER
 EXPOSE 10000
-CMD ["./agent-things -- 192.168.101.12"]
+#CMD ["./agent-things 192.168.101.12 2"]

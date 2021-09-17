@@ -25,7 +25,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -37,7 +37,6 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/hyperledger/fabric-sdk-go/pkg/core/config"
 	"github.com/hyperledger/fabric-sdk-go/pkg/gateway"
 	"github.com/mitchellh/mapstructure"
 )
@@ -122,6 +121,8 @@ type EvaluationParam struct {
 	EvaluationID  string `json:"EvaluationID"` //uuid
 	TransactionID string `json:"TransactionID"`
 	AgentID       string `json:"AgentID"`
+	TrusterID     string `json:"TrusterID"`
+	TrusteeID     string `json:"TrusteeID"`
 	Timestamp     string `json:"Timestamp"`
 	ResponseTime  string `json:"ResponseTime"`
 	Validity      string `json:"Validity"`
@@ -280,7 +281,7 @@ func SendMessageToDevice(device string, message Message) { // send to openHAB
 		"Accept":       {"application/json"},
 	}
 	//curl -X POST --header "Content-Type: text/plain" --header "Accept: application/json" -d "OFF" "http://{openHAB_IP}:8080/rest/items/My_Item"
-	url := "http://" + ipOpenHAB + ":8080/rest/items/" + "device2" + "_command"
+	url := "http://" + ipOpenHAB + ":8080/rest/items/" + device + "_command"
 	println(url)
 	req, err := http.NewRequest("POST", url, responseBody)
 	req.Header = header
@@ -345,162 +346,30 @@ func StartServer() {
 	handleRequests()
 }
 
-func initApplication() gateway.Contract {
-	// init val and weight
-	val["response_time"] = 10
-	val["validity"] = 10
-	val["correctness"] = 10
-	val["cooperation"] = 10
-	val["QoS"] = 10
-	val["availability"] = 10
-	val["confidence"] = 10
+// Dependency injection involves four roles:
 
-	weight["response_time"] = 10
-	weight["validity"] = 10
-	weight["correctness"] = 10
-	weight["cooperation"] = 10
-	weight["QoS"] = 10
-	weight["availability"] = 10
-	weight["confidence"] = 10
+// - the service object(s) to be used - also known as "dependency"
+// - the client object that is depending on the service(s) it uses
+// - the interfaces that define how the client may use the services
+// - the injector, which is responsible for constructing the services
+//   and injecting them into the client
 
-	log.Println("remove wallet cache")
-	err := os.RemoveAll("wallet")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("============ application-golang starts ============")
-
-	err = os.Setenv("DISCOVERY_AS_LOCALHOST", "true")
-	if err != nil {
-		log.Fatalf("Error setting DISCOVERY_AS_LOCALHOST environemnt variable: %v", err)
-	}
-
-	wallet, err := gateway.NewFileSystemWallet("wallet")
-	if err != nil {
-		log.Fatalf("Failed to create wallet: %v", err)
-	}
-
-	if !wallet.Exists("appUser") {
-		err = populateWalletContent(wallet)
-		if err != nil {
-			log.Fatalf("Failed to populate wallet contents: %v", err)
-		}
-	}
-
-	/*ccpPath := filepath.Join(
-		//		"..",
-		//		"..",
-		"/Users/oky/Docker/fabric/fa2/new2/fabric-samples",
-		"test-network",
-		"organizations",
-		"peerOrganizations",
-		"org1.example.com",
-		"connection-org1.yaml",
-	)*/
-
-	ccpPath := filepath.Join(
-		"./config-fabric",
-		"crypto-config",
-		"peerOrganizations",
-		"org1.example.com",
-		"connection-org1.yaml",
-	)
-
-	gw, err := gateway.Connect(
-		gateway.WithConfig(config.FromFile(filepath.Clean(ccpPath))),
-		gateway.WithIdentity(wallet, "appUser"),
-	)
-	if err != nil {
-		log.Fatalf("Failed to connect to gateway: %v", err)
-	}
-	defer gw.Close()
-
-	network, err := gw.GetNetwork("mychannel")
-	if err != nil {
-		log.Fatalf("Failed to get network: %v", err)
-	}
-
-	contract := network.GetContract("trusted-chaincode")
-
-	return *contract
+// service TrustEngine
+type trustEngine struct {
 }
 
-func populateWalletContent(wallet *gateway.Wallet) error {
-	log.Println("============ Populating wallet ============")
-	/*credPath := filepath.Join(
-		//		"..",
-		//		"..",
-		"/Users/oky/Docker/fabric/fa2/new2/fabric-samples",
-		"test-network",
-		"organizations",
-		"peerOrganizations",
-		"org1.example.com",
-		"users",
-		"Admin@org1.example.com",
-		"msp",
-	)*/
+// client Communication
 
-	credPath := filepath.Join(
-		"./config-fabric",
-		"crypto-config",
-		"peerOrganizations",
-		"org1.example.com",
-		"users",
-		"Admin@org1.example.com",
-		"msp",
-	)
-
-	certPath := filepath.Join(credPath, "signcerts", "Admin@org1.example.com-cert.pem")
-	// read the certificate pem
-	cert, err := ioutil.ReadFile(filepath.Clean(certPath))
-	if err != nil {
-		return err
-	}
-
-	keyDir := filepath.Join(credPath, "keystore")
-	// there's a single file in this dir containing the private key
-	files, err := ioutil.ReadDir(keyDir)
-	if err != nil {
-		return err
-	}
-	if len(files) != 1 {
-		return fmt.Errorf("keystore folder should have contain one file")
-	}
-	keyPath := filepath.Join(keyDir, files[0].Name())
-	key, err := ioutil.ReadFile(filepath.Clean(keyPath))
-	if err != nil {
-		return err
-	}
-
-	identity := gateway.NewX509Identity("Org1MSP", string(cert), string(key))
-
-	return wallet.Put("appUser", identity)
+// interface TrustModel
+type trustModel interface {
+	calculateTrust(Agent, []EvaluationParam) float64
+	decideTrust(Agent, float64) bool
 }
 
-func submitTransaction(contract gateway.Contract) {
-	log.Println("--> Submit Transaction: InitLedger, function creates the initial set of assets on the ledger")
-	result, err := contract.SubmitTransaction("InitLedgerMod")
-	if err != nil {
-		log.Fatalf("Failed to Submit transaction: %v", err)
-	}
-	log.Println(string(result))
-}
+// injector
 
-func evaluateTransaction(contract gateway.Contract) {
-	log.Println("--> Submit Transaction: InitLedger, function creates the initial set of assets on the ledger")
-	result, err := contract.EvaluateTransaction("GetAllAssets")
-	if err != nil {
-		log.Fatalf("Failed to evaluate transaction: %v", err)
-	}
-	log.Println(string(result))
-}
+func getHistoryTransaction(contract *gateway.Contract, agentID string, AgentOwnerID string) ([]EvaluationParam, []EvaluationParam) {
 
-func addTransaction(contract gateway.Contract, agentID string) {
-
-}
-
-func getHistoryTransaction(contract *gateway.Contract, agentID string) []EvaluationParam {
 	listEvaluationParamAsBytes := db.GetHistoryEvaluation(contract, agentID)
 
 	var listEvaluationParamRaw []map[string]interface{}
@@ -508,34 +377,70 @@ func getHistoryTransaction(contract *gateway.Contract, agentID string) []Evaluat
 	//var listAgent []Agent
 	json.Unmarshal(listEvaluationParamAsBytes, &listEvaluationParamRaw)
 	//listAgent = listAgentRaw[0]
-	resultListEvaluationParam := []EvaluationParam{}
+	resultListEvaluationParamTrustee := []EvaluationParam{}
 
 	//fmt.Println(listEvaluationParamRaw)
-	for _, v := range listEvaluationParamRaw {
+	for k, _ := range listEvaluationParamRaw {
 		var evaluationParam EvaluationParam
-		mapstructure.Decode(v["Record"], &evaluationParam)
-		resultListEvaluationParam = append(resultListEvaluationParam, evaluationParam)
+		mapstructure.Decode(listEvaluationParamRaw[k]["Record"], &evaluationParam)
+		if !(evaluationParam.TrusteeID == agentID && evaluationParam.TrusterID == AgentOwnerID) || (evaluationParam.TrusteeID == AgentOwnerID && evaluationParam.TrusteeID == agentID) {
+			resultListEvaluationParamTrustee = append(resultListEvaluationParamTrustee, evaluationParam)
+		}
 
 	}
-	fmt.Println(resultListEvaluationParam)
-	//mapstructure.Decode(listAgentRaw[0]["Record"], &agentDestination)
-	return resultListEvaluationParam
+
+	listEvaluationParamAsBytes = db.GetHistoryEvaluation(contract, agentID)
+
+	//var listEvaluationParamRaw []map[string]interface{}
+
+	//var listAgent []Agent
+	json.Unmarshal(listEvaluationParamAsBytes, &listEvaluationParamRaw)
+	//listAgent = listAgentRaw[0]
+	resultListEvaluationParamTrustor := []EvaluationParam{}
+
+	//fmt.Println(listEvaluationParamRaw)
+	for k, _ := range listEvaluationParamRaw {
+		var evaluationParam EvaluationParam
+		mapstructure.Decode(listEvaluationParamRaw[k]["Record"], &evaluationParam)
+		if (evaluationParam.TrusteeID == agentID && evaluationParam.TrusterID == AgentOwnerID) || (evaluationParam.TrusteeID == AgentOwnerID && evaluationParam.TrusteeID == agentID) {
+			resultListEvaluationParamTrustor = append(resultListEvaluationParamTrustor, evaluationParam)
+		}
+	}
+
+	return resultListEvaluationParamTrustee, resultListEvaluationParamTrustor
 }
 
-func calculateTrust(agentDestination Agent, history []EvaluationParam) float64 {
+type ByTimestamp []EvaluationParam
 
-	weight["response_time"] = 7.0
-	weight["validity"] = 7.0
-	weight["correctness"] = 7.0
-	weight["cooperation"] = 7.0
-	weight["QoS"] = 7.0
+func (a ByTimestamp) Len() int {
+	return len(a)
+}
+func (a ByTimestamp) Less(i, j int) bool {
+	dataI, _ := strconv.Atoi(a[i].Timestamp)
+	dataJ, _ := strconv.Atoi(a[j].Timestamp)
+	return dataI > dataJ
+}
+func (a ByTimestamp) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+
+func calculateTrust(agentDestination Agent, historyTrustee []EvaluationParam, historyTrustor []EvaluationParam) float64 {
+
+	weight["response_time"] = 9.0
+	weight["validity"] = 9.0
+	weight["correctness"] = 9.0
+	weight["cooperation"] = 9.0
+	weight["QoS"] = 9.0
 	weight["availability"] = 10.0
-	weight["confidence"] = 7.0
+	weight["confidence"] = 9.0
 
+	// sort
+	if len(historyTrustee) > 10 {
+		sort.Sort(ByTimestamp(historyTrustee))
+		historyTrustee = historyTrustee[0:9]
+	}
 	var evaluationNumber int
-	sumAllRating := 0.0
-	if len(history) > 1 {
-		for k, v := range history {
+	sumAllRatingTrustee := 0.0
+	if len(historyTrustee) > 0 {
+		for k, v := range historyTrustee {
 			response_time, _ := strconv.ParseFloat(v.ResponseTime, 32)
 			validity, _ := strconv.ParseFloat(v.Validity, 32)
 			coop, _ := strconv.ParseFloat(v.Cooperation, 32)
@@ -547,13 +452,63 @@ func calculateTrust(agentDestination Agent, history []EvaluationParam) float64 {
 			sumWeightedRatingEvaluation := response_time*weight["response_time"] + validity*weight["validity"] + coop*weight["cooperation"] + qos*weight["qos"] + correctness*weight["correctness"] + confidence*weight["confidence"] + availability*weight["availability"]
 			sumWeight := weight["response_time"] + weight["validity"] + weight["correctness"] + weight["cooperation"] + weight["QoS"] + weight["availability"] + weight["confidence"]
 
-			sumAllRating = sumAllRating + (sumWeightedRatingEvaluation / sumWeight)
+			if k == 0 {
+				sumAllRatingTrustee = sumAllRatingTrustee + (sumWeightedRatingEvaluation/sumWeight)*3
+			} else if k == 1 {
+				sumAllRatingTrustee = sumAllRatingTrustee + (sumWeightedRatingEvaluation/sumWeight)*2
+			} else {
+				sumAllRatingTrustee = sumAllRatingTrustee + (sumWeightedRatingEvaluation / sumWeight)
+			}
+
 			evaluationNumber = k
 		}
-		evaluationNumber++
-		return sumAllRating / float64(evaluationNumber)
+		evaluationNumber = evaluationNumber + 4
+
+		sumAllRatingTrustee = sumAllRatingTrustee / float64(evaluationNumber)
 	} else {
-		return 5 // default if no trx
+		sumAllRatingTrustee = 5 // default if no trx
+	}
+
+	// sort
+	if len(historyTrustor) > 10 {
+		sort.Sort(ByTimestamp(historyTrustor))
+		historyTrustor = historyTrustor[0:9]
+	}
+	sumAllRatingTrustor := 0.0
+	if len(historyTrustor) > 0 {
+		for k, v := range historyTrustor {
+			response_time, _ := strconv.ParseFloat(v.ResponseTime, 32)
+			validity, _ := strconv.ParseFloat(v.Validity, 32)
+			coop, _ := strconv.ParseFloat(v.Cooperation, 32)
+			qos, _ := strconv.ParseFloat(v.Qos, 32)
+			correctness, _ := strconv.ParseFloat(v.Correctness, 32)
+			confidence, _ := strconv.ParseFloat(v.Confidence, 32)
+			availability, _ := strconv.ParseFloat(v.Availability, 32)
+
+			sumWeightedRatingEvaluation := response_time*weight["response_time"] + validity*weight["validity"] + coop*weight["cooperation"] + qos*weight["qos"] + correctness*weight["correctness"] + confidence*weight["confidence"] + availability*weight["availability"]
+			sumWeight := weight["response_time"] + weight["validity"] + weight["correctness"] + weight["cooperation"] + weight["QoS"] + weight["availability"] + weight["confidence"]
+
+			if k == 0 {
+				sumAllRatingTrustor = sumAllRatingTrustor + ((sumWeightedRatingEvaluation / sumWeight) * 3)
+			} else if k == 1 {
+				sumAllRatingTrustor = sumAllRatingTrustor + ((sumWeightedRatingEvaluation / sumWeight) * 2)
+			} else {
+				sumAllRatingTrustor = sumAllRatingTrustor + (sumWeightedRatingEvaluation / sumWeight)
+			}
+
+			evaluationNumber = k
+		}
+		evaluationNumber = evaluationNumber + 4
+		sumAllRatingTrustor = sumAllRatingTrustor / float64(evaluationNumber)
+	} else {
+		sumAllRatingTrustor = 5 // default if no trx
+	}
+
+	// bobot antara diri sendiri dan target 50:50
+	if agentDestination.DeviceID == "device3" {
+		return sumAllRatingTrustor*0.5 + sumAllRatingTrustee*0.5
+	} else {
+		return sumAllRatingTrustor*0.8 + sumAllRatingTrustee*0.2
 	}
 
 }
@@ -569,11 +524,11 @@ func decideTrust(agent Agent, resultCalculation float64) bool {
 		return true
 	}
 	return false*/
-	return resultCalculation > agentTrust
+	return resultCalculation >= agentTrust
 }
 
 func writeTransaction(contract *gateway.Contract, agentOwn Agent, agentDestination Agent, ResponseTime string, Validity string, Correctness string, Cooperation string, Qos string, Availability string, Confidence string) {
-
+	fmt.Println("input ke ledger : " + agentOwn.AgentID + " | " + agentOwn.AgentID + " | " + agentDestination.AgentID + " | " + ResponseTime + " | " + Validity + " | " + Correctness + " | " + Cooperation + " | " + Qos + " | " + Availability + " | " + Confidence)
 	db.CreateHistoryEvaluation(*contract, "trx01", agentOwn.AgentID, agentOwn.AgentID, agentDestination.AgentID, ResponseTime, Validity, Correctness, Cooperation, Qos, Availability, Confidence)
 
 }
@@ -785,38 +740,66 @@ func combineKey(priv ecdsa.PrivateKey, pubv ecdsa.PublicKey, pubx string, puby s
 }
 
 func thingsHandler(message Message, topic string) {
-	//check topic for get deviceID
-	deviceID := strings.Split(strings.Split(topic, "-")[2], "/")[0]
-	agentOwn := ListConnectedDevice[deviceID]
-	historyEvaluation := getHistoryTransaction(&mainContract, message.Destination)
-	// calculate trust
-	trustValue := calculateTrust(agentOwn, historyEvaluation)
-	// decide trust
-	if decideTrust(agentOwn, trustValue) {
-		message.MessageType = "evaluateReq"
+	fmt.Println("isi refuid" + message.RefUID)
+	if message.RefUID == "" {
+		fmt.Println("masuk ndak ke yang start")
+		//check topic for get deviceID
+		deviceID := strings.Split(strings.Split(topic, "-")[2], "/")[0]
+		agentOwn := ListConnectedDevice[deviceID]
+
+		agentDestination := getAgentByID(message.Destination)
+		historyEvaluationTrustee, historyEvaluationTrustor := getHistoryTransaction(&mainContract, agentDestination.AgentID, agentOwn.AgentID)
+
+		// calculate trust
+		trustValue := calculateTrust(agentOwn, historyEvaluationTrustee, historyEvaluationTrustor)
+		// decide trust
+		if decideTrust(agentOwn, trustValue) {
+			message.MessageType = "evaluateReq"
+			message.Sender = "agent"
+			message.Pubx = pubk.X.String()
+			message.Puby = pubk.Y.String()
+			messageForAgent, err := json.Marshal(message)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			fmt.Println("masuk ndak ke yg publish destinasi : " + message.Destination)
+			agentPublishHandler("agent/agent-device-"+message.Destination+"/listen", string(messageForAgent))
+		} else {
+			agentDestination := getAgentByID(message.Destination)
+			writeTransaction(&mainContract, agentOwn, agentDestination, "2", "2", "2", "2", "2", "2", "2")
+		}
+	} else {
+		fmt.Println("masuk ndak ke yg reply dari things : " + message.Destination)
+		message.MessageType = "dataReply"
 		message.Sender = "agent"
-		message.Pubx = pubk.X.String()
-		message.Puby = pubk.Y.String()
 		messageForAgent, err := json.Marshal(message)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
-		agentPublishHandler("agent/agent-device-"+message.Destination+"/listen", string(messageForAgent))
-	} else {
-		agentDestination := getAgentByID(message.Destination)
-		writeTransaction(&mainContract, agentOwn, agentDestination, "4", "4", "4", "4", "4", "4", "4")
+		//encryptedMessage := string(encryptMessage(string(messageForAgent)))
+		encryptedMessage := encryptMessage(messageForAgent)
+		agentPublishHandler("agent/agent-device-"+message.Source+"/secure", string(encryptedMessage))
+
+		agentDestination := getAgentByID(message.Source)
+		agentOwn := getAgentByID(message.Destination)
+		writeTransaction(&mainContract, agentOwn, agentDestination, "9", "9", "9", "9", "9", "9", "9")
+
 	}
+
 }
 
 func agentHandler(message Message, topic string) {
 	deviceID := strings.Split(strings.Split(topic, "-")[2], "/")[0]
 	agentOwn := ListConnectedDevice[deviceID]
 
+	agentDestination := getAgentByID(message.Source)
 	if message.MessageType == "evaluateReq" {
-		historyEvaluation := getHistoryTransaction(&mainContract, message.Source)
+		historyEvaluationTrustee, historyEvaluationTrustor := getHistoryTransaction(&mainContract, agentDestination.AgentID, agentOwn.AgentID)
 		// calculate trust
-		trustValue := calculateTrust(agentOwn, historyEvaluation)
+
+		trustValue := calculateTrust(agentOwn, historyEvaluationTrustee, historyEvaluationTrustor)
 		if decideTrust(agentOwn, trustValue) {
 			pubax := new(big.Int)
 			pubax.SetString(message.Pubx, 10)
@@ -839,57 +822,85 @@ func agentHandler(message Message, topic string) {
 			}
 			agentPublishHandler("agent/agent-device-"+message.Source+"/listen", string(messageForAgent))
 
+		} else {
+			message.MessageType = "evaluateReply"
+			message.Sender = "agent"
+			message.Content = "---"
+			messageForAgent, err := json.Marshal(message)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			agentPublishHandler("agent/agent-device-"+message.Source+"/listen", string(messageForAgent))
 		}
 	} else if message.MessageType == "evaluateReply" {
-		pubax := new(big.Int)
-		pubax.SetString(message.Pubx, 10)
+		if message.Content != "---" {
+			pubax := new(big.Int)
+			pubax.SetString(message.Pubx, 10)
 
-		pubay := new(big.Int)
-		pubay.SetString(message.Puby, 10)
-		pubkOpposite.X = pubax
-		pubkOpposite.X = pubay
-		sharedKey = combineKey(priv, pubk, message.Pubx, message.Puby)
+			pubay := new(big.Int)
+			pubay.SetString(message.Puby, 10)
+			pubkOpposite.X = pubax
+			pubkOpposite.X = pubay
+			sharedKey = combineKey(priv, pubk, message.Pubx, message.Puby)
 
-		// encrypt
-		message.MessageType = "dataReq"
-		messageForAgent, err := json.Marshal(message)
-		if err != nil {
-			fmt.Println(err)
-			return
+			// encrypt
+			message.MessageType = "dataReq"
+			messageForAgent, err := json.Marshal(message)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			//encryptedMessage := string(encryptMessage(string(messageForAgent)))
+			encryptedMessage := encryptMessage(messageForAgent)
+
+			//send encrypted
+			agentPublishHandler("agent/agent-device-"+message.Destination+"/secure", string(encryptedMessage))
+
+		} else {
+			agentDestination := getAgentByID(message.Destination)
+			writeTransaction(&mainContract, agentOwn, agentDestination, "3", "3", "3", "3", "3", "3", "3")
 		}
-		//encryptedMessage := string(encryptMessage(string(messageForAgent)))
-		fmt.Print("before : ")
-		fmt.Println(messageForAgent)
-		encryptedMessage := encryptMessage(messageForAgent)
-		fmt.Print("hasil raw encode")
-		fmt.Println(encryptedMessage)
-		fmt.Print("after : ")
-		fmt.Println(decryptMessage(encryptedMessage))
 
-		//send encrypted
-		agentPublishHandler("agent/agent-device-"+message.Destination+"/secure", string(encryptedMessage))
 	} else if message.MessageType == "dataReq" {
 		//time.Sleep(10000) // wait respon from things
-		// encrypt
-		message.MessageType = "dataReply"
-		messageForAgent, err := json.Marshal(message)
-		if err != nil {
-			fmt.Println(err)
-			return
+		// simulate reply was bad
+		//message.Content = "---"
+		if message.Content == "getBadLight" {
+			message.Content = "---"
 		}
-		//encryptedMessage := string(encryptMessage(string(messageForAgent)))
-		encryptedMessage := encryptMessage(messageForAgent)
-		agentPublishHandler("agent/agent-device-"+message.Source+"/secure", string(encryptedMessage))
+		SendMessageToDevice(message.Destination, message)
+		/*
 
-		agentDestination := getAgentByID(message.Source)
-		writeTransaction(&mainContract, agentOwn, agentDestination, "9", "9", "9", "9", "9", "9", "9")
+			message.MessageType = "dataReply"
+			messageForAgent, err := json.Marshal(message)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			//encryptedMessage := string(encryptMessage(string(messageForAgent)))
+			encryptedMessage := encryptMessage(messageForAgent)
+			agentPublishHandler("agent/agent-device-"+message.Source+"/secure", string(encryptedMessage))
+		*/
+		//agentDestination := getAgentByID(message.Source)
+		//writeTransaction(&mainContract, agentOwn, agentDestination, "9", "9", "9", "9", "9", "9", "9")
 	} else if message.MessageType == "dataReply" {
 		//time.Sleep(10000)
 		// encrypt
 		//evaluate(message)
 		//write evaluation
-		agentDestination := getAgentByID(message.Destination)
-		writeTransaction(&mainContract, agentOwn, agentDestination, "9", "9", "9", "9", "9", "9", "9")
+		if message.Content == "---" {
+			agentDestination := getAgentByID(message.Destination)
+			writeTransaction(&mainContract, agentOwn, agentDestination, "1", "1", "1", "1", "1", "1", "1")
+
+		} else {
+			agentDestination := getAgentByID(message.Destination)
+			writeTransaction(&mainContract, agentOwn, agentDestination, "9", "9", "9", "9", "9", "9", "9")
+		}
+
+		// publish to command
+		fmt.Println("message source : " + message.Source)
+		SendMessageToDevice(message.Source, message)
 
 	}
 }
@@ -908,8 +919,6 @@ func getAgentByID(deviceID string) Agent {
 
 			//var listAgent []Agent
 			_ = json.Unmarshal(listAgentAsBytes, &listAgentRaw)
-			//listAgent = listAgentRaw[0]
-
 			fmt.Println(listAgentRaw[0]["Record"])
 
 			mapstructure.Decode(listAgentRaw[0]["Record"], &agentDestination)
@@ -927,25 +936,12 @@ var agentSubscribeHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqt
 	//log.Printf("Topic %s registered...\n", msg.Topic())
 	log.Printf("message received in topic %s ...\n", msg.Topic())
 
-	// try to encrypt the message
-
-	//check topic for get deviceID
-	//deviceID := strings.Split(strings.Split(msg.Topic(), "-")[2], "/")[0]
-	//agentOwn := ListConnectedDevice[deviceID]
-	// get payload
 	var rawPayload = string(msg.Payload())
 	var message Message
-
-	fmt.Println("payload awal raw : ")
-	fmt.Println(msg.Payload())
 	if strings.Split(msg.Topic(), "/")[2] == "secure" { // listen secure
 		decrypted := decryptMessage(msg.Payload())
-		fmt.Println("hasil decrypt : ")
-		fmt.Println(decrypted)
 		err := json.Unmarshal([]byte(decrypted), &message)
 		var agentDestination Agent
-		fmt.Println("hasil pesan : ")
-		fmt.Println(message)
 		// check if device already registered in own hub
 		if isAlreadyInListConnected(message.Destination) {
 			agentDestination = ListConnectedDevice[message.Destination]
@@ -990,7 +986,6 @@ var agentSubscribeHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqt
 
 				//var listAgent []Agent
 				_ = json.Unmarshal(listAgentAsBytes, &listAgentRaw)
-				//listAgent = listAgentRaw[0]
 
 				fmt.Println(listAgentRaw[0]["Record"])
 
@@ -1005,87 +1000,10 @@ var agentSubscribeHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqt
 			switch message.Sender {
 			case "things":
 				thingsHandler(message, msg.Topic())
-				// send to agent
-				/*
-					// get history trustee
-					historyEvaluation := getHistoryTransaction(&mainContract, message.Destination)
 
-					// calculate trust
-					trustValue := calculateTrust(agentOwn, historyEvaluation)
-					// decide trust
-					if decideTrust(agentOwn, trustValue) {
-						// write transaction
-						//writeTransaction(&mainContract)
-						// modify message
-						println("sending to from things to agent")
-						message.Sender = "agent"
-						message.UID = createUID()
-						messageForAgent, err := json.Marshal(message)
-						if err != nil {
-							fmt.Println(err)
-							return
-						}
-						agentPublishHandler("agent/agent-device-"+message.Destination+"/listen", string(messageForAgent))
-						//writeTransaction(&mainContract, agentOwn, agentDestination, "9", "9", "9", "9", "9", "9", "9")
-					} else {
-						log.Println("target cannot be trusted")
-						// write history transaction
-						writeTransaction(&mainContract, agentOwn, agentDestination, "3", "3", "3", "3", "3", "3", "3")
-						// write evaluation
-					}
-				*/
 			case "agent":
 				agentHandler(message, msg.Topic())
-				// send to things (openhab)
-				// modified messge
-				/* ////////
-				// get history trustee
-				historyEvaluation := getHistoryTransaction(&mainContract, message.Source)
 
-				// calculate trust
-				trustValue := calculateTrust(agentOwn, historyEvaluation)
-				if !decideTrust(agentOwn, trustValue) {
-					/*
-						// sebaiknya di hold untuk menunggu balasan dari perangkat
-						println("sending to from things to agent")
-
-						message.Sender = "things"
-						message.RefUID = message.UID
-						message.UID = createUID()
-						message.Content = "{\"status\":\"unavailable\"}"
-						messageForAgent, err := json.Marshal(message)
-						if err != nil {
-							fmt.Println(err)
-							return
-						}
-						agentPublishHandler("agent/agent-device-"+message.Destination+"/listen", string(messageForAgent))
-						//writeTransaction(&mainContract, agentOwn, agentDestination, "9", "9", "9", "9", "9", "9", "9")
-				*/
-				/*
-					} else {
-						log.Println("target cannot be trusted")
-
-						println("sending to from things to agent")
-						message.Sender = ""
-						message.RefUID = message.UID
-						message.UID = createUID()
-						message.Content = ""
-						messageForAgent, err := json.Marshal(message)
-						if err != nil {
-							fmt.Println(err)
-							return
-						}
-						agentPublishHandler("agent/agent-device-"+message.Source+"/listen", string(messageForAgent))
-						// write history transaction
-						writeTransaction(&mainContract, agentOwn, agentDestination, "3", "3", "3", "3", "3", "3", "3")
-						// write evaluation
-					}
-
-					println("sending to from representative agent to things")
-					message.Sender = "things"
-					message.UID = createUID()
-					SendMessageToDevice(message.Destination, message)
-				*/
 			}
 
 		} else {
@@ -1133,7 +1051,7 @@ var agentControllerHandler mqtt.MessageHandler = func(client mqtt.Client, msg mq
 					fmt.Println(listAgentRaw[0]["Record"])
 					var agent Agent
 					mapstructure.Decode(listAgentRaw[0]["Record"], &agent)
-					fmt.Println(agent)
+
 					//agent := listAgentRaw[0]["Record"]
 					//json.Unmarshal([]byte(agent), &listAgentRaw)
 					addListConnectedDevice(cmd.Content, agent)
@@ -1205,7 +1123,7 @@ func initializeMQTT() mqtt.Client {
 	return client
 }
 
-func startMQTTClient() {
+func startMQTTClient(option string) {
 	keepAlive := make(chan os.Signal)
 	signal.Notify(keepAlive, os.Interrupt, syscall.SIGTERM)
 	clientMQTT = initializeMQTT()
@@ -1215,7 +1133,26 @@ func startMQTTClient() {
 
 	// test
 	//agentPublishHandler("agent-controller/command", "{\"command\":\"device-add\",\"content\":\"device2\"}")
-	agentPublishHandler("agent-controller/command", "{\"command\":\"device-add\",\"content\":\"device3\"}")
+	if option == "2" {
+		agentPublishHandler("agent-controller/command", "{\"command\":\"device-add\",\"content\":\"device2\"}")
+		//agentPublishHandler("agent-controller/command", "{\"command\":\"device-add\",\"content\":\"device4\"}")
+	}
+	if option == "3" {
+		agentPublishHandler("agent-controller/command", "{\"command\":\"device-add\",\"content\":\"device3\"}")
+	}
+	if option == "5" {
+		agentPublishHandler("agent-controller/command", "{\"command\":\"device-add\",\"content\":\"device5\"}")
+	}
+
+	//getHistoryTransaction(&mainContract, "fdbb98d3-76fc-4c70-88a1-9ab993334e7d")
+	//getHistoryTransaction(&mainContract, "3a85260f-8a84-44e4-9b2e-d6c514cc2db7")
+	//db.CreateHistoryEvaluation(mainContract, "trxid", "3a85260f-8a84-44e4-9b2e-d6c514cc2db7", "3a85260f-8a84-44e4-9b2e-d6c514cc2db7", "fdbb98d3-76fc-4c70-88a1-9ab993334e7d", "8", "8", "8", "8", "8", "8", "8")
+	//CreateEvaluationAgent(ctx contractapi.TransactionContextInterface, EvaluationID string, TransactionID string, AgentID string, Timestamp string, TrusterID string, TrusteeID string, ResponseTime string, Validity string, Correctness string, Cooperation string, Qos string, Availability string, Confidence string)
+	//contract.SubmitTransaction("CreateEvaluationAgent", evaluationID.String(), TransactionID, AgentID, timestamp, AgentOwn, AgentDestination, ResponseTime, Validity, Correctness, Cooperation, Qos, Availability, Confidence)
+	//writeTransaction()
+	//db.GetHistoryEvaluation(&mainContract, "fdbb98d3-76fc-4c70-88a1-9ab993334e7d")
+	//getHistoryTransaction(&mainContract, "3a85260f-8a84-44e4-9b2e-d6c514cc2db7")
+
 	<-keepAlive
 }
 
@@ -1247,7 +1184,7 @@ func main() {
 	//StartServer()
 	//submitTransaction(contract)
 	// using mqtt
-	startMQTTClient()
+	startMQTTClient(os.Args[2])
 
 	log.Println("============ application-golang ends ============")
 }

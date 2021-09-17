@@ -141,7 +141,7 @@ func populateWalletContent(wallet *gateway.Wallet) error {
 }
 
 func CreateAgent(contract gateway.Contract, DeviceID string, TrustValue string, Tolerance string) string {
-	log.Println("--> Submit Transaction: CreateAgent, creates new asset with ID, color, owner, size, and appraisedValue arguments")
+	log.Println("--> Submit Transaction: CreateAgent")
 	AgentID := uuid.New()
 	SubcribePath := "agent-device-" + DeviceID + "/listen"
 	result, err := contract.SubmitTransaction("CreateAgent", AgentID.String(), DeviceID, SubcribePath, TrustValue, Tolerance)
@@ -158,36 +158,38 @@ func IsAgentExist(contract gateway.Contract, DeviceID string) bool {
 	if err != nil {
 		log.Fatalf("Failed to Submit transaction: %v", err)
 	}
-	log.Println(string(result))
+	//log.Println(string(result))
 	return string(result) != "[]"
 }
 
 func GetAgentByDevice(contract gateway.Contract, DeviceID string) []byte {
-	log.Println("--> Evaluate Transaction: Check Agent")
+	log.Println("--> Evaluate Transaction: Check Evaluate Agent")
 	result, err := contract.EvaluateTransaction("GetAgentByDevice", DeviceID)
 	if err != nil {
 		log.Fatalf("Failed to Submit transaction: %v", err)
 	}
-	println(string(result))
+	//println(string(result))
 	return result
 }
 
 func GetHistoryEvaluation(contract *gateway.Contract, agentID string) []byte {
-	log.Println("--> Evaluate Transaction: Check Agent")
+	log.Println("--> Evaluate Transaction: GetEvaluationByAgent")
 	result, err := contract.EvaluateTransaction("GetEvaluationByAgent", agentID)
 	if err != nil {
 		log.Fatalf("Failed to Submit transaction: %v", err)
 	}
-	println(string(result))
+	//println(string(result))
 	return result
 }
 
 func CreateHistoryEvaluation(contract gateway.Contract, TransactionID string, AgentID string, AgentOwn string, AgentDestination string, ResponseTime string, Validity string, Correctness string, Cooperation string, Qos string, Availability string, Confidence string) string {
 	log.Println("--> Submit Transaction: CreateEvaluation, ")
-	EvaluationID := uuid.New().String()
-	Timestamp := strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
+	evaluationID := uuid.New()
+	timestamp := strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
+	fmt.Println("evaluation ID :" + evaluationID.String())
+	fmt.Println("timestamp : " + timestamp)
 
-	result, err := contract.SubmitTransaction("CreateEvaluationAgent", EvaluationID, TransactionID, AgentID, Timestamp, AgentOwn, AgentDestination, ResponseTime, Validity, Correctness, Cooperation, Qos, Availability, Confidence)
+	result, err := contract.SubmitTransaction("CreateEvaluationAgent", evaluationID.String(), TransactionID, AgentID, timestamp, AgentOwn, AgentDestination, ResponseTime, Validity, Correctness, Cooperation, Qos, Availability, Confidence)
 	if err != nil {
 		log.Fatalf("Failed to Submit transaction: %v", err)
 	}
